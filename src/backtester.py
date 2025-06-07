@@ -10,7 +10,7 @@ from colorama import Fore, Style, init
 import numpy as np
 import itertools
 
-from src.llm.models import LLM_ORDER, OLLAMA_LLM_ORDER, get_model_info, ModelProvider
+from src.llm.models import LLM_ORDER, OLLAMA_LLM_ORDER, LMSTUDIO_LLM_ORDER, get_model_info, ModelProvider
 from src.utils.analysts import ANALYST_ORDER
 from src.main import run_hedge_fund
 from src.tools.api import (
@@ -23,6 +23,7 @@ from src.tools.api import (
 from src.utils.display import print_backtest_results, format_backtest_row
 from typing_extensions import Callable
 from src.utils.ollama import ensure_ollama_and_model
+from src.utils.lmstudio import ensure_lmstudio_and_model
 
 init(autoreset=True)
 
@@ -638,7 +639,7 @@ if __name__ == "__main__":
         "--margin-requirement",
         type=float,
         default=0.0,
-        help="Margin ratio for short positions, e.g. 0.5 for 50% (default: 0.0)",
+        help="Margin ratio for short positions, e.g. 0.5 for 50 percent (default: 0.0)",
     )
     parser.add_argument(
         "--analysts",
@@ -652,6 +653,7 @@ if __name__ == "__main__":
         help="Use all available analysts (overrides --analysts)",
     )
     parser.add_argument("--ollama", action="store_true", help="Use Ollama for local LLM inference")
+    parser.add_argument("--lmstudio", action="store_true", help="Use LM Studio for local LLM inference")
 
     args = parser.parse_args()
 
@@ -687,9 +689,14 @@ if __name__ == "__main__":
             selected_analysts = choices
             print(f"\nSelected analysts: " f"{', '.join(Fore.GREEN + choice.title().replace('_', ' ') + Style.RESET_ALL for choice in choices)}")
 
-    # Select LLM model based on whether Ollama is being used
+    # Select LLM model based on whether Ollama or LM Studio is being used
     model_name = ""
     model_provider = None
+
+    # Check for conflicting arguments
+    if args.ollama and args.lmstudio:
+        print(f"{Fore.RED}Error: Cannot use both --ollama and --lmstudio at the same time.{Style.RESET_ALL}")
+        sys.exit(1)
 
     if args.ollama:
         print(f"{Fore.CYAN}Using Ollama for local LLM inference.{Style.RESET_ALL}")
@@ -725,6 +732,44 @@ if __name__ == "__main__":
 
         model_provider = ModelProvider.OLLAMA.value
         print(f"\nSelected {Fore.CYAN}Ollama{Style.RESET_ALL} model: {Fore.GREEN + Style.BRIGHT}{model_name}{Style.RESET_ALL}\n")
+    elif args.lmstudio:
+        print(f"{Fore.CYAN}Using LM Studio for local LLM inference.{Style.RESET_ALL}")
+
+        # Select from LM Studio-specific models
+        model_name = questionary.select(
+            "Select your LM Studio model:",
+            choices=[questionary.Choice(display, value=value) for display, value, _ in LMSTUDIO_LLM_ORDER],
+            style=questionary.Style(
+                [
+                    ("selected", "fg:green bold"),
+                    ("pointer", "fg:green bold"),
+                    ("highlighted", "fg:green"),
+                    ("answer", "fg:green bold"),
+                ]
+            ),
+        ).ask()
+
+        if not model_name:
+            print("\n\nInterrupt received. Exiting...")
+            sys.exit(0)
+
+        if model_name == "-":
+            model_name = questionary.text("Enter the custom model name:").ask()
+            if not model_name:
+                print("\n\nInterrupt received. Exiting...")
+                sys.exit(0)
+
+        # Ensure LM Studio is running and the model is available
+        result = ensure_lmstudio_and_model(model_name)
+        if isinstance(result, str):
+            # If result is a string, it means auto-detect returned a selected model
+            model_name = result
+        elif not result:
+            print(f"{Fore.RED}Cannot proceed without LM Studio and the selected model.{Style.RESET_ALL}")
+            sys.exit(1)
+
+        model_provider = ModelProvider.LM_STUDIO.value
+        print(f"\nSelected {Fore.CYAN}LM Studio{Style.RESET_ALL} model: {Fore.GREEN + Style.BRIGHT}{model_name}{Style.RESET_ALL}\n")
     else:
         # Use the standard cloud-based LLM selection
         model_choice = questionary.select(

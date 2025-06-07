@@ -43,8 +43,10 @@ def call_llm(
     model_info = get_model_info(model_name, model_provider)
     llm = get_model(model_name, model_provider)
 
-    # For non-JSON support models, we can use structured output
-    if not (model_info and not model_info.has_json_mode()):
+    # For models that support JSON mode, use structured output
+    # LM Studio and some other models need manual JSON extraction
+    use_structured_output = model_info and model_info.has_json_mode()
+    if use_structured_output:
         llm = llm.with_structured_output(
             pydantic_model,
             method="json_mode",
@@ -53,14 +55,29 @@ def call_llm(
     # Call the LLM with retries
     for attempt in range(max_retries):
         try:
-            # Call the LLM
-            result = llm.invoke(prompt)
+            # For LM Studio models, modify the prompt to be more explicit about JSON formatting
+            if model_info and model_info.is_lm_studio():
+                # Add explicit JSON formatting instructions to the prompt
+                modified_prompt = modify_prompt_for_lmstudio(prompt)
+                result = llm.invoke(modified_prompt)
+            else:
+                # Call the LLM normally
+                result = llm.invoke(prompt)
 
-            # For non-JSON support models, we need to extract and parse the JSON manually
-            if model_info and not model_info.has_json_mode():
+            # For models without structured output support, extract JSON manually
+            if not use_structured_output:
                 parsed_result = extract_json_from_response(result.content)
                 if parsed_result:
                     return pydantic_model(**parsed_result)
+                else:
+                    # If JSON extraction fails, try to parse the entire content as JSON
+                    try:
+                        import json
+                        parsed_result = json.loads(result.content.strip())
+                        return pydantic_model(**parsed_result)
+                    except:
+                        # If all parsing fails, fall back to default
+                        raise Exception(f"Failed to parse JSON from response: {result.content[:200]}...")
             else:
                 return result
 
@@ -143,3 +160,37 @@ def get_agent_model_config(state, agent_name):
         model_provider = model_provider.value
     
     return model_name, model_provider
+
+
+def modify_prompt_for_lmstudio(prompt):
+    """
+    Modify the prompt for LM Studio models to ensure proper JSON formatting.
+    LM Studio models need more explicit instructions about JSON output.
+    """
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    # If it's a ChatPromptTemplate, we need to modify the messages
+    if hasattr(prompt, 'messages'):
+        modified_messages = []
+        for message in prompt.messages:
+            if isinstance(message, HumanMessage):
+                # Add explicit JSON formatting instructions to human messages
+                content = message.content
+                if "JSON format" in content and "Return" in content:
+                    # Add more explicit instructions
+                    content += "\n\nIMPORTANT: Respond ONLY with valid JSON. Do not include any explanatory text before or after the JSON. The response must start with '{' and end with '}'."
+                modified_messages.append(HumanMessage(content=content))
+            elif isinstance(message, SystemMessage):
+                # Add JSON formatting reminder to system messages
+                content = message.content
+                content += "\n\nAlways respond with valid JSON format when requested. Do not include any text outside the JSON structure."
+                modified_messages.append(SystemMessage(content=content))
+            else:
+                modified_messages.append(message)
+
+        # Create a new prompt with modified messages
+        return ChatPromptTemplate.from_messages(modified_messages)
+
+    # If it's not a ChatPromptTemplate, return as-is
+    return prompt

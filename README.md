@@ -160,6 +160,40 @@ poetry run python src/main.py --ticker AAPL,MSFT,NVDA --ollama
 run.bat --ticker AAPL,MSFT,NVDA --ollama main
 ```
 
+You can also specify a `--lmstudio` flag to run the AI hedge fund using LM Studio for local LLM inference.
+
+```bash
+# With Poetry:
+poetry run python src/main.py --ticker AAPL,MSFT,NVDA --lmstudio
+
+# With Docker (on Linux/Mac):
+./run.sh --ticker AAPL,MSFT,NVDA --lmstudio main
+
+# With Docker (on Windows):
+run.bat --ticker AAPL,MSFT,NVDA --lmstudio main
+```
+
+**Note**: For LM Studio, make sure you have LM Studio running with a model loaded and the server started (default: http://localhost:1234). You can configure the URL using the `LMSTUDIO_BASE_URL` environment variable.
+
+## Timeout Configuration
+
+The program includes configurable timeout settings for all LLM providers to prevent hanging on slow responses. The default timeout is **10 hours (36,000 seconds)** to accommodate long-running model responses.
+
+You can customize timeouts for each provider in your `.env` file:
+
+```bash
+# Timeout settings (in seconds, default: 36000 = 10 hours)
+OPENAI_TIMEOUT=36000
+ANTHROPIC_TIMEOUT=36000
+GROQ_TIMEOUT=36000
+DEEPSEEK_TIMEOUT=36000
+GOOGLE_TIMEOUT=36000
+OLLAMA_TIMEOUT=36000
+LMSTUDIO_TIMEOUT=36000
+```
+
+**Note**: Local models (Ollama, LM Studio) may need longer timeouts depending on your hardware and model size.
+
 You can also specify a `--show-reasoning` flag to print the reasoning of each agent to the console.
 
 ```bash
@@ -229,6 +263,18 @@ poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --ollama
 
 # With Docker (on Windows):
 run.bat --ticker AAPL,MSFT,NVDA --ollama backtest
+```
+
+You can also specify a `--lmstudio` flag to run the backtester using LM Studio for local LLM inference.
+```bash
+# With Poetry:
+poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --lmstudio
+
+# With Docker (on Linux/Mac):
+./run.sh --ticker AAPL,MSFT,NVDA --lmstudio backtest
+
+# With Docker (on Windows):
+run.bat --ticker AAPL,MSFT,NVDA --lmstudio backtest
 ```
 
 ## Contributing

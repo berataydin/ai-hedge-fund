@@ -11,8 +11,9 @@ from src.graph.state import AgentState
 from src.utils.display import print_trading_output
 from src.utils.analysts import ANALYST_ORDER, get_analyst_nodes
 from src.utils.progress import progress
-from src.llm.models import LLM_ORDER, OLLAMA_LLM_ORDER, get_model_info, ModelProvider
+from src.llm.models import LLM_ORDER, OLLAMA_LLM_ORDER, LMSTUDIO_LLM_ORDER, get_model_info, ModelProvider
 from src.utils.ollama import ensure_ollama_and_model
+from src.utils.lmstudio import ensure_lmstudio_and_model
 
 import argparse
 from datetime import datetime
@@ -146,6 +147,7 @@ if __name__ == "__main__":
     parser.add_argument("--show-reasoning", action="store_true", help="Show reasoning from each agent")
     parser.add_argument("--show-agent-graph", action="store_true", help="Show the agent graph")
     parser.add_argument("--ollama", action="store_true", help="Use Ollama for local LLM inference")
+    parser.add_argument("--lmstudio", action="store_true", help="Use LM Studio for local LLM inference")
 
     args = parser.parse_args()
 
@@ -176,9 +178,14 @@ if __name__ == "__main__":
         selected_analysts = choices
         print(f"\nSelected analysts: {', '.join(Fore.GREEN + choice.title().replace('_', ' ') + Style.RESET_ALL for choice in choices)}\n")
 
-    # Select LLM model based on whether Ollama is being used
+    # Select LLM model based on whether Ollama or LM Studio is being used
     model_name = ""
     model_provider = ""
+
+    # Check for conflicting arguments
+    if args.ollama and args.lmstudio:
+        print(f"{Fore.RED}Error: Cannot use both --ollama and --lmstudio at the same time.{Style.RESET_ALL}")
+        sys.exit(1)
 
     if args.ollama:
         print(f"{Fore.CYAN}Using Ollama for local LLM inference.{Style.RESET_ALL}")
@@ -214,6 +221,44 @@ if __name__ == "__main__":
 
         model_provider = ModelProvider.OLLAMA.value
         print(f"\nSelected {Fore.CYAN}Ollama{Style.RESET_ALL} model: {Fore.GREEN + Style.BRIGHT}{model_name}{Style.RESET_ALL}\n")
+    elif args.lmstudio:
+        print(f"{Fore.CYAN}Using LM Studio for local LLM inference.{Style.RESET_ALL}")
+
+        # Select from LM Studio-specific models
+        model_name: str = questionary.select(
+            "Select your LM Studio model:",
+            choices=[questionary.Choice(display, value=value) for display, value, _ in LMSTUDIO_LLM_ORDER],
+            style=questionary.Style(
+                [
+                    ("selected", "fg:green bold"),
+                    ("pointer", "fg:green bold"),
+                    ("highlighted", "fg:green"),
+                    ("answer", "fg:green bold"),
+                ]
+            ),
+        ).ask()
+
+        if not model_name:
+            print("\n\nInterrupt received. Exiting...")
+            sys.exit(0)
+
+        if model_name == "-":
+            model_name = questionary.text("Enter the custom model name:").ask()
+            if not model_name:
+                print("\n\nInterrupt received. Exiting...")
+                sys.exit(0)
+
+        # Ensure LM Studio is running and the model is available
+        result = ensure_lmstudio_and_model(model_name)
+        if isinstance(result, str):
+            # If result is a string, it means auto-detect returned a selected model
+            model_name = result
+        elif not result:
+            print(f"{Fore.RED}Cannot proceed without LM Studio and the selected model.{Style.RESET_ALL}")
+            sys.exit(1)
+
+        model_provider = ModelProvider.LM_STUDIO.value
+        print(f"\nSelected {Fore.CYAN}LM Studio{Style.RESET_ALL} model: {Fore.GREEN + Style.BRIGHT}{model_name}{Style.RESET_ALL}\n")
     else:
         # Use the standard cloud-based LLM selection
         model_choice = questionary.select(

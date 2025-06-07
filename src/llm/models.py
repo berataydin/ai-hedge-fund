@@ -21,6 +21,7 @@ class ModelProvider(str, Enum):
     GROQ = "Groq"
     OPENAI = "OpenAI"
     OLLAMA = "Ollama"
+    LM_STUDIO = "LMStudio"
 
 
 class LLMModel(BaseModel):
@@ -45,6 +46,10 @@ class LLMModel(BaseModel):
         # Only certain Ollama models support JSON mode
         if self.is_ollama():
             return "llama3" in self.model_name or "neural-chat" in self.model_name
+        # LM Studio models may not support structured output in the same way
+        # We'll handle this differently in the LLM utility
+        if self.is_lm_studio():
+            return False
         return True
 
     def is_deepseek(self) -> bool:
@@ -58,6 +63,10 @@ class LLMModel(BaseModel):
     def is_ollama(self) -> bool:
         """Check if the model is an Ollama model"""
         return self.provider == ModelProvider.OLLAMA
+
+    def is_lm_studio(self) -> bool:
+        """Check if the model is an LM Studio model"""
+        return self.provider == ModelProvider.LM_STUDIO
 
 
 # Load models from JSON file
@@ -84,6 +93,7 @@ def load_models_from_json(json_path: str) -> List[LLMModel]:
 current_dir = Path(__file__).parent
 models_json_path = current_dir / "api_models.json"
 ollama_models_json_path = current_dir / "ollama_models.json"
+lmstudio_models_json_path = current_dir / "lmstudio_models.json"
 
 # Load available models from JSON
 AVAILABLE_MODELS = load_models_from_json(str(models_json_path))
@@ -91,27 +101,37 @@ AVAILABLE_MODELS = load_models_from_json(str(models_json_path))
 # Load Ollama models from JSON
 OLLAMA_MODELS = load_models_from_json(str(ollama_models_json_path))
 
+# Load LM Studio models from JSON
+LMSTUDIO_MODELS = load_models_from_json(str(lmstudio_models_json_path))
+
 # Create LLM_ORDER in the format expected by the UI
 LLM_ORDER = [model.to_choice_tuple() for model in AVAILABLE_MODELS]
 
 # Create Ollama LLM_ORDER separately
 OLLAMA_LLM_ORDER = [model.to_choice_tuple() for model in OLLAMA_MODELS]
 
+# Create LM Studio LLM_ORDER separately
+LMSTUDIO_LLM_ORDER = [model.to_choice_tuple() for model in LMSTUDIO_MODELS]
+
 
 def get_model_info(model_name: str, model_provider: str) -> LLMModel | None:
     """Get model information by model_name"""
-    all_models = AVAILABLE_MODELS + OLLAMA_MODELS
+    all_models = AVAILABLE_MODELS + OLLAMA_MODELS + LMSTUDIO_MODELS
     return next((model for model in all_models if model.model_name == model_name and model.provider == model_provider), None)
 
 
 def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | ChatOllama | None:
+    # Default timeout of 10 hours (36,000 seconds) - configurable via environment variables
+    default_timeout = 36000
+
     if model_provider == ModelProvider.GROQ:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             # Print error to console
             print(f"API Key Error: Please make sure GROQ_API_KEY is set in your .env file.")
             raise ValueError("Groq API key not found.  Please make sure GROQ_API_KEY is set in your .env file.")
-        return ChatGroq(model=model_name, api_key=api_key)
+        timeout = int(os.getenv("GROQ_TIMEOUT", default_timeout))
+        return ChatGroq(model=model_name, api_key=api_key, timeout=timeout)
     elif model_provider == ModelProvider.OPENAI:
         # Get and validate API key
         api_key = os.getenv("OPENAI_API_KEY")
@@ -120,31 +140,49 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
             # Print error to console
             print(f"API Key Error: Please make sure OPENAI_API_KEY is set in your .env file.")
             raise ValueError("OpenAI API key not found.  Please make sure OPENAI_API_KEY is set in your .env file.")
-        return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
+        timeout = int(os.getenv("OPENAI_TIMEOUT", default_timeout))
+        return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url, timeout=timeout)
     elif model_provider == ModelProvider.ANTHROPIC:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             print(f"API Key Error: Please make sure ANTHROPIC_API_KEY is set in your .env file.")
             raise ValueError("Anthropic API key not found.  Please make sure ANTHROPIC_API_KEY is set in your .env file.")
-        return ChatAnthropic(model=model_name, api_key=api_key)
+        timeout = int(os.getenv("ANTHROPIC_TIMEOUT", default_timeout))
+        return ChatAnthropic(model=model_name, api_key=api_key, timeout=timeout)
     elif model_provider == ModelProvider.DEEPSEEK:
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
             print(f"API Key Error: Please make sure DEEPSEEK_API_KEY is set in your .env file.")
             raise ValueError("DeepSeek API key not found.  Please make sure DEEPSEEK_API_KEY is set in your .env file.")
-        return ChatDeepSeek(model=model_name, api_key=api_key)
+        timeout = int(os.getenv("DEEPSEEK_TIMEOUT", default_timeout))
+        return ChatDeepSeek(model=model_name, api_key=api_key, timeout=timeout)
     elif model_provider == ModelProvider.GEMINI:
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             print(f"API Key Error: Please make sure GOOGLE_API_KEY is set in your .env file.")
             raise ValueError("Google API key not found.  Please make sure GOOGLE_API_KEY is set in your .env file.")
-        return ChatGoogleGenerativeAI(model=model_name, api_key=api_key)
+        timeout = int(os.getenv("GOOGLE_TIMEOUT", default_timeout))
+        return ChatGoogleGenerativeAI(model=model_name, api_key=api_key, timeout=timeout)
     elif model_provider == ModelProvider.OLLAMA:
         # For Ollama, we use a base URL instead of an API key
         # Check if OLLAMA_HOST is set (for Docker on macOS)
         ollama_host = os.getenv("OLLAMA_HOST", "localhost")
         base_url = os.getenv("OLLAMA_BASE_URL", f"http://{ollama_host}:11434")
+        timeout = int(os.getenv("OLLAMA_TIMEOUT", default_timeout))
         return ChatOllama(
             model=model_name,
             base_url=base_url,
+            timeout=timeout,
+        )
+    elif model_provider == ModelProvider.LM_STUDIO:
+        # For LM Studio, we use OpenAI-compatible API with configurable base URL
+        # Default to localhost:1234/v1 but allow configuration via environment variable
+        base_url = os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+        timeout = int(os.getenv("LMSTUDIO_TIMEOUT", default_timeout))
+        # LM Studio doesn't require an API key, but we need to provide a dummy one for ChatOpenAI
+        return ChatOpenAI(
+            model=model_name,
+            api_key="lm-studio",  # Dummy API key
+            base_url=base_url,
+            timeout=timeout,
         )

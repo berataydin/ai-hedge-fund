@@ -13,6 +13,7 @@ show_help() {
   echo "  --initial-cash AMT  Initial cash position (default: 100000.0)"
   echo "  --margin-requirement RATIO  Margin requirement ratio (default: 0.0)"
   echo "  --ollama            Use Ollama for local LLM inference"
+  echo "  --lmstudio          Use LM Studio for local LLM inference"
   echo "  --show-reasoning    Show reasoning from each agent"
   echo ""
   echo "Commands:"
@@ -27,6 +28,7 @@ show_help() {
   echo "Examples:"
   echo "  ./run.sh --ticker AAPL,MSFT,NVDA main"
   echo "  ./run.sh --ticker AAPL,MSFT,NVDA --ollama main"
+  echo "  ./run.sh --ticker AAPL,MSFT,NVDA --lmstudio main"
   echo "  ./run.sh --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 backtest"
   echo "  ./run.sh compose    # Run with Docker Compose (includes Ollama)"
   echo "  ./run.sh ollama     # Start only the Ollama container"
@@ -37,6 +39,7 @@ show_help() {
 # Default values
 TICKER="AAPL,MSFT,NVDA"
 USE_OLLAMA=""
+USE_LMSTUDIO=""
 START_DATE=""
 END_DATE=""
 INITIAL_AMOUNT="100000.0"
@@ -70,6 +73,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ollama)
       USE_OLLAMA="--ollama"
+      shift
+      ;;
+    --lmstudio)
+      USE_LMSTUDIO="--lmstudio"
       shift
       ;;
     --show-reasoning)
@@ -243,6 +250,26 @@ elif [ "$COMMAND" = "backtest" ]; then
   fi
 fi
 
+# Check for conflicting flags
+if [ -n "$USE_OLLAMA" ] && [ -n "$USE_LMSTUDIO" ]; then
+  echo "Error: Cannot use both --ollama and --lmstudio at the same time."
+  exit 1
+fi
+
+# If using LM Studio, check if it's running
+if [ -n "$USE_LMSTUDIO" ]; then
+  echo "Using LM Studio for local LLM inference..."
+
+  # Check if LM Studio server is running
+  if ! curl -s http://localhost:1234/v1/models > /dev/null 2>&1; then
+    echo "Warning: LM Studio server doesn't appear to be running on http://localhost:1234"
+    echo "Please start LM Studio and make sure the server is running before proceeding."
+    echo "You can configure the URL using the LMSTUDIO_BASE_URL environment variable."
+  else
+    echo "LM Studio server is running."
+  fi
+fi
+
 # If using Ollama, make sure the service is started
 if [ -n "$USE_OLLAMA" ]; then
   echo "Setting up Ollama container for local LLM inference..."
@@ -310,8 +337,13 @@ fi
 # Build the command
 CMD="docker run -it --rm -v $(pwd)/.env:/app/.env"
 
+# If using LM Studio, add network host to access local LM Studio server
+if [ -n "$USE_LMSTUDIO" ]; then
+  CMD="$CMD --network host"
+fi
+
 # Add the command
-CMD="$CMD ai-hedge-fund python $SCRIPT_PATH --ticker $TICKER $START_DATE $END_DATE $INITIAL_PARAM --margin-requirement $MARGIN_REQUIREMENT $SHOW_REASONING"
+CMD="$CMD ai-hedge-fund python $SCRIPT_PATH --ticker $TICKER $START_DATE $END_DATE $INITIAL_PARAM --margin-requirement $MARGIN_REQUIREMENT $SHOW_REASONING $USE_LMSTUDIO"
 
 # Run the command
 echo "Running: $CMD"

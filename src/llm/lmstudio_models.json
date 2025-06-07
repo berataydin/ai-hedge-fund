@@ -1,0 +1,12 @@
+[
+  {
+    "display_name": "Available models will be loaded from LM Studio",
+    "model_name": "auto-detect",
+    "provider": "LMStudio"
+  },
+  {
+    "display_name": "custom",
+    "model_name": "-",
+    "provider": "LMStudio"
+  }
+]
