@@ -29,6 +29,8 @@ import {
   Assessment,
 } from '@mui/icons-material';
 import { FormData, FormErrors, AnalysisState, AnalysisProgress } from '../types';
+import MarkdownViewer from './MarkdownViewer';
+import { formatAnalysisResultsAsMarkdown, generateSampleMarkdown } from '../utils/markdownFormatter';
 
 interface AnalysisPanelProps {
   formData: FormData;
@@ -46,6 +48,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   onCancelAnalysis,
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
 
   const canStartAnalysis = () => {
     return (
@@ -262,16 +265,31 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       {/* Analysis Controls */}
       <Box sx={{ mt: 3 }}>
         {!analysisState.isRunning ? (
-          <Button
-            variant="contained"
-            size="large"
-            fullWidth
-            startIcon={<PlayArrow />}
-            onClick={onStartAnalysis}
-            disabled={!canStartAnalysis()}
-          >
-            Start Analysis
-          </Button>
+          <>
+            <Button
+              variant="contained"
+              size="large"
+              fullWidth
+              startIcon={<PlayArrow />}
+              onClick={onStartAnalysis}
+              disabled={!canStartAnalysis()}
+            >
+              Start Analysis
+            </Button>
+
+            {/* Demo Button - Only show when no real results */}
+            {!analysisState.result && (
+              <Button
+                variant="outlined"
+                size="small"
+                fullWidth
+                onClick={() => setShowDemo(!showDemo)}
+                sx={{ mt: 1 }}
+              >
+                {showDemo ? 'Hide' : 'Show'} Sample Report
+              </Button>
+            )}
+          </>
         ) : (
           <Button
             variant="outlined"
@@ -307,79 +325,111 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         </Alert>
       )}
 
+      {/* Demo Markdown Viewer - Only show when no real results */}
+      {showDemo && !analysisState.result && !analysisState.isRunning && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Sample Analysis Report
+          </Typography>
+          <MarkdownViewer
+            content={generateSampleMarkdown()}
+            title="Sample AI Hedge Fund Analysis Report"
+            maxHeight={500}
+          />
+        </Box>
+      )}
+
       {/* Results Display */}
       {analysisState.result && !analysisState.isRunning && (
         <Box sx={{ mt: 3 }}>
           <Typography variant="h6" gutterBottom>
             Analysis Results
           </Typography>
-          
-          {/* Trading Decisions */}
-          {analysisState.result.decisions && (
-            <Card sx={{ mb: 2 }}>
-              <CardContent>
-                <Typography variant="subtitle1" gutterBottom>
-                  Trading Decisions
-                </Typography>
-                {Object.entries(analysisState.result.decisions).map(([ticker, decision]) => (
-                  <Box key={ticker} sx={{ mb: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="subtitle2">{ticker}:</Typography>
-                      <Chip 
-                        label={`${decision.action.toUpperCase()} ${decision.quantity}`}
-                        color={decision.action === 'buy' ? 'success' : decision.action === 'sell' ? 'error' : 'default'}
-                        size="small"
-                      />
-                      <Typography variant="caption">
-                        ({Math.round(decision.confidence)}% confidence)
-                      </Typography>
-                    </Box>
-                  </Box>
-                ))}
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Analyst Signals */}
-          {analysisState.result.analystSignals && (
-            <Card>
-              <CardContent>
-                <Typography variant="subtitle1" gutterBottom>
-                  Analyst Signals
-                </Typography>
-                {Object.entries(analysisState.result.analystSignals).map(([analyst, signals]) => (
-                  <Accordion key={analyst}>
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Typography variant="subtitle2">{analyst}</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      {Object.entries(signals).map(([ticker, signal]) => (
-                        <Box key={ticker} sx={{ mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {getSignalIcon(signal.signal)}
-                            <Typography variant="body2">{ticker}:</Typography>
-                            <Chip 
-                              label={signal.signal}
-                              color={getSignalColor(signal.signal) as any}
-                              size="small"
-                            />
-                            <Typography variant="caption">
-                              ({Math.round(signal.confidence)}%)
-                            </Typography>
-                          </Box>
-                          {signal.reasoning && (
-                            <Typography variant="caption" color="text.secondary" sx={{ ml: 4, display: 'block' }}>
-                              {signal.reasoning}
-                            </Typography>
-                          )}
+          {/* Markdown Report */}
+          <MarkdownViewer
+            content={formatAnalysisResultsAsMarkdown(analysisState.result, formData)}
+            title="AI Hedge Fund Analysis Report"
+            maxHeight={500}
+          />
+
+          {/* Detailed Results (Collapsible) */}
+          <Accordion sx={{ mt: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant="subtitle1">Detailed Results View</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              {/* Trading Decisions */}
+              {analysisState.result.decisions && (
+                <Card sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Trading Decisions
+                    </Typography>
+                    {Object.entries(analysisState.result.decisions).map(([ticker, decision]) => (
+                      <Box key={ticker} sx={{ mb: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="subtitle2">{ticker}:</Typography>
+                          <Chip
+                            label={`${decision.action.toUpperCase()} ${decision.quantity}`}
+                            color={decision.action === 'buy' ? 'success' : decision.action === 'sell' ? 'error' : 'default'}
+                            size="small"
+                          />
+                          <Typography variant="caption">
+                            ({Math.round(decision.confidence)}% confidence)
+                          </Typography>
                         </Box>
-                      ))}
-                    </AccordionDetails>
-                  </Accordion>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+                      </Box>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Analyst Signals */}
+              {analysisState.result.analystSignals && (
+                <Card>
+                  <CardContent>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Analyst Signals
+                    </Typography>
+                    {Object.entries(analysisState.result.analystSignals).map(([analyst, signals]) => (
+                      <Accordion key={analyst}>
+                        <AccordionSummary expandIcon={<ExpandMore />}>
+                          <Typography variant="subtitle2">{analyst}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          {Object.entries(signals).map(([ticker, signal]) => (
+                            <Box key={ticker} sx={{ mb: 1 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {getSignalIcon(signal.signal)}
+                                <Typography variant="body2">{ticker}:</Typography>
+                                <Chip
+                                  label={signal.signal}
+                                  color={getSignalColor(signal.signal) as any}
+                                  size="small"
+                                />
+                                <Typography variant="caption">
+                                  ({Math.round(signal.confidence)}%)
+                                </Typography>
+                              </Box>
+                              {signal.reasoning && (
+                                <Typography variant="caption" color="text.secondary" sx={{ ml: 4, display: 'block' }}>
+                                  {typeof signal.reasoning === 'string'
+                                    ? signal.reasoning
+                                    : JSON.stringify(signal.reasoning, null, 2)
+                                  }
+                                </Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </AccordionDetails>
+                      </Accordion>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </AccordionDetails>
+          </Accordion>
         </Box>
       )}
     </Paper>

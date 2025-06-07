@@ -160,7 +160,14 @@ export const runAnalysis = (
               if (data.type === 'progress') {
                 onProgress(data);
               } else if (data.type === 'complete') {
-                onComplete(data.result);
+                // Transform the API response to match our frontend types
+                const transformedResult = {
+                  decisions: data.data?.decisions || {},
+                  analystSignals: data.data?.analyst_signals || {},
+                };
+                console.log('Received analysis result:', data.data);
+                console.log('Transformed result:', transformedResult);
+                onComplete(transformedResult);
                 return;
               } else if (data.type === 'error') {
                 onError(data.message || 'Analysis failed');
